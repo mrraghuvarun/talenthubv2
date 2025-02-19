@@ -77,9 +77,13 @@ const user8=decodedToken.username;
         const [isSkillsDropdownOpen, setIsSkillsDropdownOpen] = useState(false);
         const [isCertificationsDropdownOpen, setIsCertificationsDropdownOpen] = useState(false);
 
-    useEffect(() => {
-        fetchPersonalDetails(id);
-      }, [id]);
+        useEffect(() => {
+          if (!id) {
+            setError('Invalid candidate ID');
+            return;
+          }
+          fetchPersonalDetails(id);
+        }, [id]);
     
  // Prepare the data for Excel export
       const handleDownloadDetails = () => {
@@ -158,22 +162,29 @@ const user8=decodedToken.username;
     };
 
     const fetchPersonalDetails = async (id) => {
-        try {
-         
-            const response = await axios.get(`http://localhost:3000/api/personalDetails/${id}`);
-            setDetails(response.data);
-            setFormData({
-                personalDetails: response.data.personalDetails,
-                qualifications: response.data.qualifications,
-                skills: response.data.skills,
-                certifications: response.data.certifications,
-                users: response.data.users  // Assuming your API returns username
-            });
-        } catch (error) {
-            setError('Failed to fetch personal details');
-        } finally {
-            setLoading(false);
+      try {
+        setLoading(true);
+        const response = await axios.get(`http://localhost:3000/api/personalDetails/${id}`);
+        
+        if (!response.data) {
+          throw new Error('No data received');
         }
+        
+        setDetails(response.data);
+        setFormData({
+          personalDetails: response.data.personalDetails,
+          qualifications: response.data.qualifications,
+          skills: response.data.skills,
+          certifications: response.data.certifications,
+          users: response.data.users
+        });
+      } catch (error) {
+        setError(error.response?.status === 404 ? 
+          'Candidate details not found' : 
+          'Failed to fetch personal details');
+      } finally {
+        setLoading(false);
+      }
     };
 
     useEffect(() => {

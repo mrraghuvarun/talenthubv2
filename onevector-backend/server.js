@@ -4,7 +4,8 @@ const mysql = require('mysql2/promise');
 const nodemailer = require('nodemailer');
 const { v4: uuidv4 } = require('uuid');
 const cors = require('cors');
-const multer = require('multer'); // For file upload
+const axios = require('axios'); // Add this line if missing
+const multer = require('multer');
 const fs = require('fs');
 require('dotenv').config();
 const jwt = require('jsonwebtoken');
@@ -417,29 +418,30 @@ app.get('/api/magic-links', async (req, res) => {
 // API endpoint to submit candidate data
 app.post('/api/submit-candidate', upload, async (req, res) => {
   const {
-      first_name,
-      last_name,
-      phone_no,
-      address_line1,
-      address_line2,
-      city,
-      state,
-      country,
-      postal_code,
-      linkedin_url,
-      username,
-      password,
-      email,
-      recent_job,
-      preferred_roles,
-      availability,
-      work_permit_status,
-      preferred_role_type,
-      preferred_work_arrangement,
-      preferred_compensation_range, // Ensure this is included
-      skills,
-      certifications,
-  } = req.body;
+    first_name = null,
+    last_name = null,
+    phone_no = null,
+    address_line1 = null,
+    address_line2 = null,
+    city = null,
+    state = null,
+    country = null,
+    postal_code = null,
+    linkedin_url = null,
+    username = null,
+    password = null,
+    email = null,
+    recent_job = null,
+    preferred_roles = null,
+    availability = null,
+    work_permit_status = null,
+    preferred_role_type = null,
+    preferred_work_arrangement = null,
+    preferred_compensation_range = null, // Ensure this is included
+    skills = [],
+    certifications = []
+} = req.body;
+
 
   try {
       // Hash the password
@@ -447,9 +449,10 @@ app.post('/api/submit-candidate', upload, async (req, res) => {
 
       // Insert user into the users table
       const [userResult] = await pool.execute(
-          'INSERT INTO users (username, email, password, role, created_at, updated_at) VALUES (?, ?, ?, ?, NOW(), NOW())',
-          [username, email, hashedPassword, 'user']
-      );
+        'INSERT INTO users (username, email, password, role, created_at, updated_at) VALUES (?, ?, ?, ?, NOW(), NOW())',
+        [username || null, email || null, hashedPassword || null, 'user']
+    );
+    
 
       // Upload resume to S3 and get the URL
     let resumeUrl = null;
@@ -463,9 +466,6 @@ app.post('/api/submit-candidate', upload, async (req, res) => {
           'INSERT INTO personaldetails (id, first_name, last_name, phone_no, address_line1, address_line2, city, state, country, postal_code, linkedin_url, resume_path, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())',
           [userResult.insertId, first_name, last_name, phone_no, address_line1, address_line2, city, state, country, postal_code, linkedin_url, resumeUrl]
       );
-
-      
-
               // Insert qualifications
               await pool.execute(
                 'INSERT INTO qualifications (id, recent_job, preferred_roles, availability, work_permit_status, preferred_role_type, preferred_work_arrangement, compensation, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())',
@@ -1034,6 +1034,117 @@ app.put('/api/candidates/:id/role', async (req, res) => {
   } catch (error) {
     console.error('Error updating role:', error);
     res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Create a new table for Microsoft accounts
+const createMicrosoftAccountsTable = async () => {
+  try {
+    await pool.execute(`
+      CREATE TABLE IF NOT EXISTS microsoft_accounts (
+        id INT PRIMARY KEY AUTO_INCREMENT,
+        user_id INT NOT NULL,
+        microsoft_id VARCHAR(255) NOT NULL UNIQUE,
+        email VARCHAR(255) NOT NULL UNIQUE,
+        name VARCHAR(255),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      )
+    `);
+    console.log('Microsoft accounts table created successfully');
+  } catch (error) {
+    console.error('Error creating Microsoft accounts table:', error);
+  }
+};
+
+createMicrosoftAccountsTable();
+// Microsoft OAuth callback endpoint
+app.post('/api/auth/microsoft/callback', async (req, res) => {
+  console.log(req.body);
+  const { code } = req.body;
+
+  try {
+    // Exchange code for access token
+    const tokenResponse = await axios.post('https://login.microsoftonline.com/common/oauth2/v2.0/token', 
+      new URLSearchParams({
+        client_id: process.env.MICROSOFT_CLIENT_ID,
+        client_secret: process.env.MICROSOFT_CLIENT_SECRET,
+        code,
+        redirect_uri: process.env.MICROSOFT_REDIRECT_URI,
+        grant_type: 'authorization_code'
+      })
+    );
+
+    const accessToken = tokenResponse.data.access_token;
+
+    // Get user info from Microsoft Graph API
+    const userResponse = await axios.get('https://graph.microsoft.com/v1.0/me', {
+      headers: { 'Authorization': `Bearer ${accessToken}` }
+    });
+
+    const microsoftUser = userResponse.data;
+
+    // Check if Microsoft account already exists
+    const [existingAccounts] = await pool.execute(
+      'SELECT * FROM microsoft_accounts WHERE microsoft_id = ?',
+      [microsoftUser.id]
+    );
+
+    let userId;
+
+    if (existingAccounts.length > 0) {
+      // Microsoft account exists, get associated user
+      userId = existingAccounts[0].user_id;
+    } else {
+      // Check if user with this email exists
+      const [existingUsers] = await pool.execute(
+        'SELECT * FROM users WHERE email = ?',
+        [microsoftUser.mail || microsoftUser.userPrincipalName]
+      );
+
+      if (existingUsers.length > 0) {
+        // Link Microsoft account to existing user
+        userId = existingUsers[0].id;
+        await pool.execute(
+          'INSERT INTO microsoft_accounts (user_id, microsoft_id, email, name) VALUES (?, ?, ?, ?)',
+          [userId, microsoftUser.id, microsoftUser.mail || microsoftUser.userPrincipalName, microsoftUser.displayName]
+        );
+      } else {
+        // Create new user and Microsoft account
+        const [userResult] = await pool.execute(
+          'INSERT INTO users (username, email, password, role, created_at, updated_at) VALUES (?, ?, ?, ?, NOW(), NOW())',
+          [microsoftUser.displayName, microsoftUser.mail || microsoftUser.userPrincipalName, '', 'power_user']
+        );        
+
+        userId = userResult.insertId;
+
+        await pool.execute(
+          'INSERT INTO microsoft_accounts (user_id, microsoft_id, email, name) VALUES (?, ?, ?, ?)',
+          [userId, microsoftUser.id, microsoftUser.mail || microsoftUser.userPrincipalName, microsoftUser.displayName]
+        );
+      }
+    }
+
+    // Get user data
+    const [userData] = await pool.execute(
+      'SELECT * FROM users WHERE id = ?',
+      [userId]
+    );
+
+    // Generate JWT token
+    const token = jwt.sign(
+      { id: userId, email: userData[0].email, role: userData[0].role },
+      process.env.JWT_SECRET,
+      { expiresIn: '1h' }
+    );
+
+    res.json({
+      token,
+      user: userData[0]
+    });
+  } catch (error) {
+    console.error('Microsoft authentication error:', error);
+    res.status(500).json({ error: 'Authentication failed' });
   }
 });
 

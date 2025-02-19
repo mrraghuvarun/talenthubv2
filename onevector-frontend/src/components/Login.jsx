@@ -12,6 +12,33 @@ import {
 import logo from './images/logo.png';
 import TalentHubImage from './images/talenthub.png';
 
+const MicrosoftLoginButton = ({ onLoginStart }) => {
+  const handleMicrosoftLogin = async () => {
+    onLoginStart();
+    // Microsoft OAuth URL - you'll need to configure this in your Azure Portal
+    const microsoftAuthUrl = `https://login.microsoftonline.com/${import.meta.env.VITE_MICROSOFT_TENANT_ID}/oauth2/v2.0/authorize?client_id=${import.meta.env.VITE_MICROSOFT_CLIENT_ID}&response_type=code&redirect_uri=${encodeURIComponent(import.meta.env.VITE_MICROSOFT_REDIRECT_URI)}&scope=user.read`;
+    window.location.href = microsoftAuthUrl;
+  };
+
+  return (
+    <Button
+      type="button"
+      onClick={handleMicrosoftLogin}
+      className="w-full h-12 bg-white text-black border border-gray-300 rounded-xl hover:bg-gray-50 transition-all duration-200 transform hover:scale-[0.99] active:scale-[0.97] mb-4"
+    >
+      <div className="flex items-center justify-center gap-2">
+        <svg width="20" height="20" viewBox="0 0 23 23" xmlns="http://www.w3.org/2000/svg">
+          <path fill="#f35325" d="M1 1h10v10H1z"/>
+          <path fill="#81bc06" d="M12 1h10v10H12z"/>
+          <path fill="#05a6f0" d="M1 12h10v10H1z"/>
+          <path fill="#ffba08" d="M12 12h10v10H12z"/>
+        </svg>
+        <span>Continue with Microsoft</span>
+      </div>
+    </Button>
+  );
+};
+
 // Import the ForgotPassword component but we'll modify it to work as a modal
 const ForgotPasswordModal = ({ onClose }) => {
   const [email, setEmail] = useState('');
@@ -131,6 +158,62 @@ function Login() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const navigate = useNavigate();
 
+  const handleMicrosoftLoginStart = () => {
+    setIsLoading(true);
+    setError('');
+  };
+
+  // Handle Microsoft OAuth callback
+  React.useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const code = urlParams.get('code');
+    
+    if (code) {
+      handleMicrosoftCallback(code);
+    }
+  }, []);
+
+  const handleMicrosoftCallback = async (code) => {
+    try {
+      setIsLoading(true);
+      setError('');
+      
+      const response = await fetch('http://localhost:3000/api/auth/microsoft/callback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code })
+      });
+  
+      const data = await response.json();
+  
+      if (response.ok) {
+        // Store user data in localStorage
+        localStorage.setItem('user', JSON.stringify({ 
+          id: data.user.id, 
+          role: data.user.role, 
+          email: data.user.email 
+        }));
+        localStorage.setItem('token', data.token);
+        
+        // Redirect based on user role
+        if (data.user.role === 'admin') {
+          navigate('/admin-dashboard');
+        } else if (data.user.role === 'power_user') {
+          navigate('/power-user-dashboard');
+        } else {
+          navigate('/user-details', { state: { candidate: data } });
+        }
+      } else {
+        throw new Error(data.message || data.error || 'Microsoft login failed');
+      }
+    } catch (error) {
+      console.error('Microsoft login error:', error);
+      setError('Microsoft login failed. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
@@ -200,6 +283,19 @@ function Login() {
           <h3 className="text-xl md:text-2xl font-semibold text-gray-800 text-center">
             Welcome Back! Please Login to Continue
           </h3>
+
+          {/* Microsoft Login Button */}
+          <MicrosoftLoginButton onLoginStart={handleMicrosoftLoginStart} />
+
+          {/* Or Divider */}
+          <div className="relative">
+            <div className="absolute inset-0 flex items-center">
+              <div className="w-full border-t border-gray-300"></div>
+            </div>
+            <div className="relative flex justify-center text-sm">
+              <span className="px-2 bg-white text-gray-500">Or continue with email</span>
+            </div>
+          </div>
 
           {/* Login Form */}
           <form onSubmit={handleSubmit} className="space-y-6">
