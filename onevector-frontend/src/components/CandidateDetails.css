@@ -1,0 +1,118 @@
+.candidate-details-container {
+  display: grid;
+  grid-template-columns: 1fr; /* Default to one column on small screens */
+  gap: 20px; /* Space between sections */
+  margin: 20px;
+  width: 100%; /* Make the container responsive */
+}
+
+.details-box {
+  background-color: #fff;
+  padding: 20px;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1); /* Adjust shadow color */
+}
+
+.section-heading {
+  font-size: 20px;
+  font-weight: bold;
+  text-align: left;
+  margin-bottom: 15px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.details-content {
+  font-size: 16px;
+}
+
+.fixed-height-container {
+  min-height: 500px; /* Adjust based on your form size */
+  display: flex;
+  flex-direction: column;
+}
+
+.form-row {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap; /* Allow wrapping on smaller screens */
+}
+
+.form-group {
+  flex: 1 1 200px; /* Allow items to grow and shrink */
+  max-width: 100%; /* Ensure responsiveness */
+}
+
+.form-label {
+  font-size: 14px;
+  color: #333;
+  margin-bottom: 8px;
+}
+
+.form-input {
+  width: 100%;
+  padding: 12px;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  background-color: #f8f8f8;
+  box-sizing: border-box;
+}
+
+.form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  flex-wrap: wrap; /* Allow wrapping on smaller screens */
+}
+
+.btn {
+  padding: 10px 20px;
+  border-radius: 6px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background-color 0.3s;
+}
+
+.save-btn {
+  background-color: #000;
+  color: #fff;
+}
+
+.save-btn:hover {
+  background-color: #444;
+}
+
+.cancel-btn {
+  background-color: #ccc;
+  color: #333;
+}
+
+.cancel-btn:hover {
+  background-color: #999;
+}
+
+/* Media Queries for larger screens */
+@media (min-width: 480px) {
+  .candidate-details-container {
+      grid-template-columns: repeat(1, 1fr); /* Single column for very small screens like mobile */
+  }
+}
+
+@media (min-width: 768px) {
+  .candidate-details-container {
+      grid-template-columns: repeat(2, 1fr); /* 2 columns on tablets and small screens */
+  }
+}
+
+@media (min-width: 1024px) {
+  .candidate-details-container {
+      grid-template-columns: repeat(3, 1fr); /* 3 columns on large screens (e.g., laptops) */
+  }
+}
+
+@media (min-width: 1440px) {
+  .candidate-details-container {
+      grid-template-columns: repeat(3, 1fr); /* 3 columns on extra large screens */
+  }
+}

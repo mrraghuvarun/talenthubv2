@@ -1,0 +1,80 @@
+service: express-app
+
+frameworkVersion: '4'
+
+provider:
+  name: aws
+  runtime: nodejs18.x
+  region: ap-south-1
+  environment:
+    DB_HOST: ${env:DB_HOST}
+    DB_USER: ${env:DB_USER}
+    DB_PASSWORD: ${env:DB_PASSWORD}
+    DB_NAME: ${env:DB_NAME}
+    JWT_SECRET: ${env:JWT_SECRET}
+    FRONTEND_URL: ${env:FRONTEND_URL}
+    EMAIL_FROM: ${env:EMAIL_FROM}
+    SMTP_HOST: ${env:SMTP_HOST}
+    SMTP_PORT: ${env:SMTP_PORT}
+    SMTP_USER: ${env:SMTP_USER}
+    SMTP_PASS: ${env:SMTP_PASS}
+    S3_BUCKET_NAME: ${env:S3_BUCKET_NAME}
+  vpc:
+    securityGroupIds:
+      - sg-01f81a4c98a51298a
+    subnetIds:
+      - subnet-08c9999bb42f17e21
+  iam:
+    role:
+      statements:
+        - Effect: "Allow"
+          Action:
+            - "s3:PutObject"
+            - "s3:GetObject"
+            - "s3:ListBucket"
+          Resource:
+            - "arn:aws:s3:::${env:S3_BUCKET_NAME}/*"
+            - "arn:aws:s3:::${env:S3_BUCKET_NAME}"
+  httpApi:
+    cors:
+      allowedOrigins:
+        - 'https://main.d8kn1vznkke9c.amplifyapp.com'
+      allowedMethods:
+        - GET
+        - POST
+        - PUT
+        - DELETE
+        - OPTIONS
+      allowedHeaders:
+        - Content-Type
+        - Authorization
+      maxAge: 3600
+    # Enable CloudWatch logging
+    logs:
+      level: INFO  # You can use DEBUG, INFO, ERROR, etc.
+      fullData: true  # This logs full data for each request (helpful for debugging)
+
+functions:
+  app:
+    handler: server.handler
+    timeout: 30  # Increase timeout to 3 minutes
+    events:
+      - httpApi:
+          path: /{proxy+}
+          method: ANY
+          cors: true
+
+plugins:
+  - serverless-dotenv-plugin
+
+package:
+  exclude:
+    - .git/**
+    - .gitignore
+  include:
+    - node_modules/**
+    - server.js
+
+custom:
+  dotenv:
+    path: .env
