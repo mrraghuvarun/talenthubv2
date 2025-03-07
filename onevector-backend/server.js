@@ -1014,7 +1014,7 @@ app.put('/api/user/info/email', upload, async (req, res) => {
 // API to update a candidate's role
 app.put('/api/candidates/:id/role', async (req, res) => {
   const { id } = req.params;
-  const { role } = req.body; // The new role to assign (e.g., "power_user")
+  const { role } = req.body;
 
   if (!['user', 'power_user', 'admin'].includes(role)) {
     return res.status(400).json({ error: 'Invalid role' });
@@ -1022,9 +1022,28 @@ app.put('/api/candidates/:id/role', async (req, res) => {
 
   try {
     const [existingCandidate] = await pool.execute('SELECT * FROM users WHERE id = ?', [id]);
-
     if (existingCandidate.length === 0) {
       return res.status(404).json({ error: 'Candidate not found' });
+    }
+
+    // Check power user limit if trying to assign power_user role
+    if (role === 'power_user') {
+      const [powerUsers] = await pool.execute(
+        'SELECT COUNT(*) as powerUserCount FROM users WHERE role = ?',
+        ['power_user']
+      );
+      
+      const currentPowerUserCount = powerUsers[0].powerUserCount;
+      
+      // Don't count the current user if they're already a power user
+      const isCurrentUserPowerUser = existingCandidate[0].role === 'power_user';
+      const availableSlots = isCurrentUserPowerUser ? 5 : 4;
+
+      if (currentPowerUserCount >= 5 && !isCurrentUserPowerUser) {
+        return res.status(403).json({ 
+          error: 'Power user limit reached. Maximum 5 power users allowed.'
+        });
+      }
     }
 
     const query = 'UPDATE users SET role = ? WHERE id = ?';
@@ -1060,7 +1079,6 @@ const createMicrosoftAccountsTable = async () => {
 createMicrosoftAccountsTable();
 // Microsoft OAuth callback endpoint
 app.post('/api/auth/microsoft/callback', async (req, res) => {
-  console.log(req.body);
   const { code } = req.body;
 
   try {
@@ -1083,6 +1101,7 @@ app.post('/api/auth/microsoft/callback', async (req, res) => {
     });
 
     const microsoftUser = userResponse.data;
+    let userId;
 
     // Check if Microsoft account already exists
     const [existingAccounts] = await pool.execute(
@@ -1090,33 +1109,40 @@ app.post('/api/auth/microsoft/callback', async (req, res) => {
       [microsoftUser.id]
     );
 
-    let userId;
-
     if (existingAccounts.length > 0) {
-      // Microsoft account exists, get associated user
       userId = existingAccounts[0].user_id;
     } else {
-      // Check if user with this email exists
       const [existingUsers] = await pool.execute(
         'SELECT * FROM users WHERE email = ?',
         [microsoftUser.mail || microsoftUser.userPrincipalName]
       );
 
       if (existingUsers.length > 0) {
-        // Link Microsoft account to existing user
         userId = existingUsers[0].id;
         await pool.execute(
           'INSERT INTO microsoft_accounts (user_id, microsoft_id, email, name) VALUES (?, ?, ?, ?)',
           [userId, microsoftUser.id, microsoftUser.mail || microsoftUser.userPrincipalName, microsoftUser.displayName]
         );
       } else {
-        // Create new user and Microsoft account
+        // Check power user count before creating new power user
+        const [powerUsers] = await pool.execute(
+          'SELECT COUNT(*) as powerUserCount FROM users WHERE role = ?',
+          ['power_user']
+        );
+
+        const defaultRole = powerUsers[0].powerUserCount >= 5 ? 'user' : 'power_user';
+
         const [userResult] = await pool.execute(
           'INSERT INTO users (username, email, password, role, created_at, updated_at) VALUES (?, ?, ?, ?, NOW(), NOW())',
-          [microsoftUser.displayName, microsoftUser.mail || microsoftUser.userPrincipalName, '', 'power_user']
+          [microsoftUser.displayName, microsoftUser.mail || microsoftUser.userPrincipalName, '', defaultRole]
         );        
 
         userId = userResult.insertId;
+
+        await pool.execute(
+          'INSERT INTO personaldetails (id, first_name, last_name, created_at, updated_at) VALUES (?, ?, ?, NOW(), NOW())',
+          [userId, microsoftUser.displayName.split(' ')[0] || '', microsoftUser.displayName.split(' ').slice(1).join(' ') || '']
+        );
 
         await pool.execute(
           'INSERT INTO microsoft_accounts (user_id, microsoft_id, email, name) VALUES (?, ?, ?, ?)',
@@ -1125,13 +1151,11 @@ app.post('/api/auth/microsoft/callback', async (req, res) => {
       }
     }
 
-    // Get user data
     const [userData] = await pool.execute(
       'SELECT * FROM users WHERE id = ?',
       [userId]
     );
 
-    // Generate JWT token
     const token = jwt.sign(
       { id: userId, email: userData[0].email, role: userData[0].role },
       process.env.JWT_SECRET,
